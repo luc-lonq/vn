@@ -12,7 +12,9 @@ COPY server/package*.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY server/src ./src
 COPY --from=web /web/dist ./public
-RUN mkdir -p /data && chown node:node /data
+# Files keep their host permissions through COPY; a restrictive umask on the build
+# host (e.g. 077) would make them unreadable for the "node" user.
+RUN chmod -R a+rX /app && mkdir -p /data && chown node:node /data
 ENV NODE_ENV=production \
     STATIC_DIR=/app/public \
     DB_PATH=/data/viet.db \
