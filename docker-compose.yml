@@ -1,0 +1,31 @@
+services:
+  api:
+    build: ./server
+    env_file: .env
+    environment:
+      DB_PATH: /data/viet.db
+      PORT: 3001
+    volumes:
+      - ./server/src:/app/src        # hot reload (node --watch)
+      - db-data:/data                # base SQLite persistante
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      API_URL: http://api:3001       # proxy Vite /api -> api
+      VITE_POLLING: ${VITE_POLLING:-false}
+    volumes:
+      - ./web:/app                   # hot reload Vite
+      - web-node-modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  web-node-modules:
