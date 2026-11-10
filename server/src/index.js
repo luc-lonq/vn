@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import cookieParser from 'cookie-parser';
 import { db } from './db.js';
 import { login, logout, isAuthed, requireAuth } from './auth.js';
@@ -6,11 +8,13 @@ import { record, cardText, summarize, hunks } from './history.js';
 import { schedule, previews } from './srs.js';
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1); // un seul proxy devant (nginx en prod, Vite en dev)
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
 const NEW_PER_DAY = Number(process.env.NEW_CARDS_PER_DAY || 20);
+
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 // ---------- Auth ----------
 app.post('/api/auth/login', login);
@@ -228,6 +232,18 @@ app.get('/api/history', (req, res) => {
 
   res.json({ entries, reviewsByDay, hasMore: rows.length === limit, nextBefore: rows.at(-1)?.updated_at ?? null });
 });
+
+// ---------- Front statique (prod) ----------
+const STATIC_DIR = process.env.STATIC_DIR && path.resolve(process.env.STATIC_DIR);
+if (STATIC_DIR && fs.existsSync(STATIC_DIR)) {
+  app.use('/assets', express.static(path.join(STATIC_DIR, 'assets'), { maxAge: '1y', immutable: true }));
+  app.use(express.static(STATIC_DIR, { index: false, maxAge: 0 }));
+  // fallback SPA : toute route hors /api renvoie index.html
+  app.get(/^(?!\/api(\/|$)).*/, (_req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.sendFile(path.join(STATIC_DIR, 'index.html'));
+  });
+}
 
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -13,6 +13,10 @@ docker compose up --build
 
 Le code est monté en volume : le front (Vite) et l'API (`node --watch`) se rechargent tout seuls. Si tu ajoutes une dépendance npm : `docker compose up --build` (et pour le front, `docker compose down -v` avant si besoin de reconstruire le volume `node_modules` — attention, `-v` supprime aussi la base).
 
+## Déploiement
+
+Push sur `main` → déploiement auto sur le VPS via GitHub Actions. Mise en place : voir [DEPLOY.md](DEPLOY.md).
+
 ## Stack
 
 | | |

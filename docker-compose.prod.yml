@@ -1,0 +1,20 @@
+# Compose de production (sur le VPS, dans /opt/viet).
+# IMAGE est écrite dans .env par la CI à chaque déploiement.
+services:
+  app:
+    image: ${IMAGE:?IMAGE manquante dans .env}
+    env_file: .env
+    environment:
+      DB_PATH: /data/viet.db
+      PORT: 3001
+    volumes:
+      - viet-data:/data
+    ports:
+      - "127.0.0.1:${APP_PORT:-3010}:3001"   # accessible seulement via nginx
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  viet-data:
