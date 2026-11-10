@@ -1,3 +1,4 @@
+# Development stack: Vite dev server + API with hot reload. See docker-compose.prod.yml for production.
 services:
   api:
     build: ./server
@@ -7,7 +8,7 @@ services:
       PORT: 3001
     volumes:
       - ./server/src:/app/src        # hot reload (node --watch)
-      - db-data:/data                # base SQLite persistante
+      - db-data:/data                # persistent SQLite database
     ports:
       - "3001:3001"
     restart: unless-stopped
@@ -15,10 +16,10 @@ services:
   web:
     build: ./web
     environment:
-      API_URL: http://api:3001       # proxy Vite /api -> api
+      API_URL: http://api:3001       # Vite proxies /api to the api service
       VITE_POLLING: ${VITE_POLLING:-false}
     volumes:
-      - ./web:/app                   # hot reload Vite
+      - ./web:/app                   # Vite hot reload
       - web-node-modules:/app/node_modules
     ports:
       - "5173:5173"

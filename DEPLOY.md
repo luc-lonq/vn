@@ -1,20 +1,25 @@
-# Déploiement (VPS + nginx existant)
+# Deployment
 
-Chaque push sur `main` → GitHub Actions build l'image, la pousse sur GHCR (`ghcr.io/luc-lonq/vn`), copie `docker-compose.prod.yml` sur le VPS et relance le conteneur. L'app écoute sur `127.0.0.1:3010`, nginx fait le HTTPS devant.
+The production image (root `Dockerfile`) builds the frontend and runs the Express API, which also serves it. It listens on `127.0.0.1:3010` and an existing nginx terminates HTTPS in front of it. The SQLite database lives in a Docker volume.
 
-## 1. Sur le VPS (une seule fois)
+Two ways to deploy, both using the same server setup:
 
-Prérequis : Docker + le plugin compose (`docker compose version`).
+- **GitHub Actions** (`.github/workflows/ci.yml`): every push to `main` is checked, built, pushed to GHCR (`ghcr.io/<owner>/<repo>`) and deployed over SSH.
+- **Manual** (`scripts/deploy.sh`): run on the server; pulls the repo and builds the image there.
+
+In the examples below, replace `viet.example.com` with your domain and `you@your-vps` with your SSH user and host.
+
+## 1. Server setup (once)
+
+Requires Docker with the Compose plugin (`docker compose version`).
 
 ```bash
-# utilisateur qui déploie (ici l'utilisateur courant) dans le groupe docker
-sudo usermod -aG docker $USER        # puis se reconnecter
+# Let your user run docker without sudo (log out and back in afterwards)
+sudo usermod -aG docker $USER
 
-# dossier de l'app
 sudo mkdir -p /opt/viet && sudo chown $USER: /opt/viet
 cd /opt/viet
 
-# config de prod
 cat > .env <<EOF
 APP_PASSWORD=$(openssl rand -base64 18)
 SESSION_SECRET=$(openssl rand -hex 32)
@@ -23,28 +28,18 @@ NEW_CARDS_PER_DAY=20
 APP_PORT=3010
 EOF
 chmod 600 .env
-cat .env    # note le mot de passe (ou remplace-le par le tien)
+cat .env   # APP_PASSWORD is your login password; replace it with your own if you prefer
 ```
 
-> Si le port 3010 est déjà pris par une autre app, change `APP_PORT` (et le `proxy_pass` nginx).
-
-### Clé SSH dédiée au déploiement
-
-Sur **ta machine** :
-
-```bash
-ssh-keygen -t ed25519 -f viet_deploy -N "" -C "github-actions-viet"
-ssh-copy-id -i viet_deploy.pub user@ton-vps      # ou ajoute le .pub dans ~/.ssh/authorized_keys
-```
+If port 3010 is already used, change `APP_PORT` here and in `proxy_pass` below.
 
 ### nginx
 
-`/etc/nginx/sites-available/viet` (remplace `viet.ton-domaine.fr`) :
-
-```nginx
+```bash
+sudo tee /etc/nginx/sites-available/viet > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name viet.ton-domaine.fr;
+    server_name viet.example.com;
 
     client_max_body_size 5m;
 
@@ -57,54 +52,82 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-```
+EOF
 
-```bash
 sudo ln -s /etc/nginx/sites-available/viet /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d viet.ton-domaine.fr     # HTTPS Let's Encrypt
+sudo certbot --nginx -d viet.example.com   # the domain's DNS must already point to the server
 ```
 
-(Le DNS du domaine doit déjà pointer vers le VPS pour que certbot passe.)
+## 2a. Deploy with GitHub Actions
 
-## 2. Sur GitHub (une seule fois)
-
-Repo → **Settings → Secrets and variables → Actions → New repository secret** :
-
-| secret | valeur |
-|---|---|
-| `VPS_HOST` | IP ou domaine du VPS |
-| `VPS_USER` | utilisateur SSH (celui du groupe docker) |
-| `VPS_SSH_KEY` | contenu **complet** du fichier `viet_deploy` (clé privée) |
-| `VPS_PORT` | port SSH, seulement s'il n'est pas 22 |
-
-Le token GHCR est fourni automatiquement par Actions (`GITHUB_TOKEN`), rien à créer.
-
-## 3. Déployer
+Create a dedicated SSH key on your machine and authorize it on the server:
 
 ```bash
-git push origin main
+ssh-keygen -t ed25519 -f ~/.ssh/viet_deploy -N "" -C "github-actions-viet"
+ssh-copy-id -i ~/.ssh/viet_deploy.pub you@your-vps
 ```
 
-Suivi dans l'onglet **Actions**. Le job se termine par un check sur `/api/health` : s'il est vert, l'app tourne.
-Relance manuelle possible via **Actions → deploy → Run workflow**.
+On Windows (PowerShell), `ssh-copy-id` isn't available:
 
-## Au quotidien
+```powershell
+ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\viet_deploy -C "github-actions-viet"
+Get-Content $env:USERPROFILE\.ssh\viet_deploy.pub | ssh you@your-vps "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+```
+
+Then add these repository secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret        | Value                                                    |
+| ------------- | -------------------------------------------------------- |
+| `VPS_HOST`    | server IP or hostname                                    |
+| `VPS_USER`    | SSH user (member of the `docker` group)                  |
+| `VPS_SSH_KEY` | full content of the private key `viet_deploy`            |
+| `VPS_PORT`    | SSH port, only if not 22                                 |
+
+The GHCR token is provided by Actions (`GITHUB_TOKEN`). Push to `main` and follow the run in the **Actions** tab; the last step checks `/api/health`.
+
+## 2b. Deploy manually
+
+```bash
+# Read-only deploy key so the server can clone the repository
+ssh-keygen -t ed25519 -f ~/.ssh/viet_repo -N "" -C "viet-readonly"
+cat ~/.ssh/viet_repo.pub   # add it under GitHub → repo Settings → Deploy keys (no write access)
+
+cd /opt/viet
+GIT_SSH_COMMAND="ssh -i ~/.ssh/viet_repo -o IdentitiesOnly=yes" git clone git@github.com:<owner>/<repo>.git src
+git -C src config core.sshCommand "ssh -i ~/.ssh/viet_repo -o IdentitiesOnly=yes"
+```
+
+For a public repository, a plain `git clone https://github.com/<owner>/<repo>.git src` is enough.
+
+Then, for every deploy:
+
+```bash
+/opt/viet/src/scripts/deploy.sh
+```
+
+The frontend build needs about 1 GB of free memory on the server.
+
+## Operations
 
 ```bash
 cd /opt/viet
-docker compose -f docker-compose.prod.yml logs -f        # logs
-docker compose -f docker-compose.prod.yml restart        # redémarrer
+docker compose -f docker-compose.prod.yml logs -f      # logs
+docker compose -f docker-compose.prod.yml restart      # restart
 ```
 
-**Changer le mot de passe** : édite `/opt/viet/.env` puis `docker compose -f docker-compose.prod.yml up -d`.
+- **Change the password**: edit `/opt/viet/.env`, then `docker compose -f docker-compose.prod.yml up -d`. Existing sessions are invalidated if `SESSION_SECRET` changes.
+- **Roll back** (Actions deploys): set `IMAGE=ghcr.io/<owner>/<repo>:<older commit sha>` in `.env`, then `up -d`.
+- **Back up the database** (good candidate for a daily cron):
 
-**Revenir à une version précédente** : dans `.env`, remplace le tag de `IMAGE=ghcr.io/luc-lonq/vn:<sha>` par le sha d'un commit précédent, puis `up -d`.
+  ```bash
+  docker compose -f /opt/viet/docker-compose.prod.yml exec -T app \
+    node -e "require('better-sqlite3')('/data/viet.db').backup('/data/backup.db')"
+  docker compose -f /opt/viet/docker-compose.prod.yml cp app:/data/backup.db /opt/viet/backup-$(date +%F).db
+  ```
 
-**Sauvegarde de la base** (à mettre en cron) :
+## Troubleshooting
 
-```bash
-docker compose -f /opt/viet/docker-compose.prod.yml exec -T app \
-  node -e "require('better-sqlite3')('/data/viet.db').backup('/data/backup.db')"
-docker compose -f /opt/viet/docker-compose.prod.yml cp app:/data/backup.db /opt/viet/backup-$(date +%F).db
-```
+- **`denied` when pulling from ghcr.io**: on GitHub, open the `vn` package settings and make sure the repository has access.
+- **SSH step fails**: check that `VPS_SSH_KEY` includes the `-----BEGIN` / `-----END` lines and that `VPS_USER` owns the matching `authorized_keys`.
+- **`permission denied` on the Docker socket**: log out and back in after `usermod -aG docker`.

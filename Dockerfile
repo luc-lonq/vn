@@ -1,4 +1,4 @@
-# Image de production : build du front puis API Express qui sert le front statique
+# Production image: builds the frontend, then runs the Express API which also serves it
 FROM node:22-bookworm-slim AS web
 WORKDIR /web
 COPY web/package*.json ./
@@ -22,4 +22,4 @@ VOLUME /data
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "src/index.js"]
+CMD ["node", "src/server.js"]

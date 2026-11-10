@@ -1,9 +1,9 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Palette strictement noir & blanc, inversée selon le thème */
+/* Strict black & white palette, inverted per theme */
 :root {
   --bg: #ffffff;
   --fg: #000000;
@@ -25,30 +25,50 @@
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-soft: var(--soft);
-  --font-mono: "Roboto Mono", ui-monospace, monospace;
+  --font-mono: 'Roboto Mono', ui-monospace, monospace;
 }
 
-html, body { background: var(--bg); color: var(--fg); }
-body { font-family: var(--font-mono); -webkit-font-smoothing: antialiased; }
-::selection { background: var(--fg); color: var(--bg); }
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+body {
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+::selection {
+  background: var(--fg);
+  color: var(--bg);
+}
 
 @utility btn {
   @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm border cursor-pointer select-none
          transition-opacity disabled:opacity-40 disabled:cursor-not-allowed;
 }
-/* primaire : rectangle plein blanc (inversé en thème clair) */
-@utility btn-primary { @apply btn bg-fg text-bg border-fg hover:opacity-85; }
-/* secondaire : rectangle noir, bordure blanche */
-@utility btn-secondary { @apply btn bg-bg text-fg border-fg hover:bg-soft; }
-@utility btn-ghost { @apply btn bg-transparent text-muted border-transparent hover:text-fg px-2; }
+/* Primary: solid white rectangle (inverted in light theme) */
+@utility btn-primary {
+  @apply btn bg-fg text-bg border-fg hover:opacity-85;
+}
+/* Secondary: black rectangle with a white border */
+@utility btn-secondary {
+  @apply btn bg-bg text-fg border-fg hover:bg-soft;
+}
+@utility btn-ghost {
+  @apply btn bg-transparent text-muted border-transparent hover:text-fg px-2;
+}
 
 @utility input {
   @apply w-full bg-bg text-fg border border-line px-3 py-2 text-sm outline-none focus:border-fg placeholder:text-muted;
 }
-@utility label { @apply block text-xs uppercase tracking-widest text-muted mb-1; }
-@utility kbd { @apply text-[10px] text-muted border border-line px-1 ml-1; }
+@utility label {
+  @apply block text-xs uppercase tracking-widest text-muted mb-1;
+}
+@utility kbd {
+  @apply text-[10px] text-muted border border-line px-1 ml-1;
+}
 
-/* Markdown */
+/* Markdown rendering (Tailwind Typography, mapped to the theme tokens) */
 .prose-viet {
   --tw-prose-body: var(--fg);
   --tw-prose-headings: var(--fg);
@@ -66,6 +86,13 @@ body { font-family: var(--font-mono); -webkit-font-smoothing: antialiased; }
   --tw-prose-td-borders: var(--line);
   font-family: var(--font-mono);
 }
-.prose-viet code::before, .prose-viet code::after,
-.prose-viet blockquote p::before, .prose-viet blockquote p::after { content: none; }
-.prose-viet :not(pre) > code { background: var(--soft); padding: 0.1em 0.35em; }
+.prose-viet code::before,
+.prose-viet code::after,
+.prose-viet blockquote p::before,
+.prose-viet blockquote p::after {
+  content: none;
+}
+.prose-viet :not(pre) > code {
+  background: var(--soft);
+  padding: 0.1em 0.35em;
+}
