@@ -1,23 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useKeyboard } from '../../hooks/useKeyboard.js';
 import { api } from '../../lib/api.js';
-import { MINUTE } from '../../lib/format.js';
-import { storage } from '../../lib/storage.js';
+import { MINUTE, plural } from '../../lib/format.js';
 import { speak } from '../../lib/speech.js';
 
-// Must match the server's Rating values (1–4).
-const RATINGS = [
-  { value: 1, label: 'à revoir' },
-  { value: 2, label: 'difficile' },
-  { value: 3, label: 'bien' },
-  { value: 4, label: 'facile' },
-];
+// Values match the server's Rating (1 = again, 3 = good). Shortcuts: A / Z
+// (AZERTY home row), 1 / 2, and space for "je sais".
+const AGAIN = 1;
 const GOOD = 3;
+const ANSWERS = [
+  { value: AGAIN, label: 'je sais pas', keys: ['a', '1'], hint: 'A' },
+  { value: GOOD, label: 'je sais', keys: ['z', '2', ' '], hint: 'Z' },
+];
+const DIRECTION_LABELS = { 'vi-fr': 'vi → fr', 'fr-vi': 'fr → vi' };
 
 export default function ReviewTab({ onStats }) {
   const [session, setSession] = useState(null);
   const [revealed, setRevealed] = useState(false);
-  const [reverse, setReverse] = useState(() => storage.get('reverse') === '1');
 
   const loadNext = useCallback(async () => {
     const next = await api('/review/next');
@@ -30,9 +29,8 @@ export default function ReviewTab({ onStats }) {
     loadNext();
   }, [loadNext]);
 
-  useEffect(() => storage.set('reverse', reverse ? '1' : '0'), [reverse]);
-
   const card = session?.card;
+  const reverse = card?.direction === 'fr-vi';
 
   const reveal = () => {
     setRevealed(true);
@@ -46,16 +44,21 @@ export default function ReviewTab({ onStats }) {
 
   useKeyboard(
     (e) => {
-      if (e.key === 'v') return speak(card.front);
-      if (!revealed && (e.key === ' ' || e.key === 'Enter')) {
-        e.preventDefault();
-        return reveal();
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const key = e.key.toLowerCase();
+      if (key === 'v') return speak(card.front);
+      if (!revealed) {
+        if (key === ' ' || key === 'enter') {
+          e.preventDefault();
+          reveal();
+        }
+        return;
       }
-      if (revealed && e.key === ' ') {
+      const answer = ANSWERS.find((a) => a.keys.includes(key));
+      if (answer) {
         e.preventDefault();
-        return rate(GOOD);
+        rate(answer.value);
       }
-      if (revealed && RATINGS.some((r) => String(r.value) === e.key)) rate(Number(e.key));
     },
     { enabled: Boolean(card) }
   );
@@ -70,9 +73,7 @@ export default function ReviewTab({ onStats }) {
     <div className="max-w-2xl mx-auto">
       <div className="flex justify-between items-center text-xs text-muted mb-3">
         <span>{cardBadge(card)}</span>
-        <button className="hover:text-fg" onClick={() => setReverse((r) => !r)}>
-          sens : {reverse ? 'fr → vi' : 'vi → fr'}
-        </button>
+        <span>{DIRECTION_LABELS[card.direction]}</span>
       </div>
 
       <div className="border border-fg min-h-80 flex flex-col">
@@ -92,8 +93,8 @@ export default function ReviewTab({ onStats }) {
 
       <div className="mt-4">
         {revealed ? (
-          <div className="grid grid-cols-4 gap-2">
-            {RATINGS.map(({ value, label }, i) => (
+          <div className="grid grid-cols-2 gap-2">
+            {ANSWERS.map(({ value, label, hint }, i) => (
               <button
                 key={value}
                 className={`${value === GOOD ? 'btn-primary' : 'btn-secondary'} flex-col py-3 gap-0.5`}
@@ -101,7 +102,7 @@ export default function ReviewTab({ onStats }) {
               >
                 <span>{label}</span>
                 <span className="text-[11px] opacity-60">
-                  {session.previews[i]} · {value}
+                  {session.previews[i]} · {hint}
                 </span>
               </button>
             ))}
@@ -167,10 +168,17 @@ function EmptyState({ session, onRefresh }) {
   return (
     <div className="border border-line py-20 text-center space-y-3">
       <p className="text-lg">Terminé pour le moment. Giỏi lắm !</p>
-      {stats.newTotal > 0 && stats.newToday === 0 && (
+      {stats.newLimitReached ? (
         <p className="text-sm text-muted">
           Limite de nouvelles cartes atteinte pour aujourd'hui ({stats.newTotal} en attente).
         </p>
+      ) : (
+        stats.newWaitingForSibling > 0 && (
+          <p className="text-sm text-muted">
+            {stats.newWaitingForSibling} {plural(stats.newWaitingForSibling, 'carte')} dans l'autre
+            sens {stats.newWaitingForSibling > 1 ? 'arrivent' : 'arrive'} demain.
+          </p>
+        )
       )}
       {nextLabel && <p className="text-sm text-muted">Prochaine révision {nextLabel}.</p>}
       {nextDue && nextDue - Date.now() < 15 * MINUTE && (

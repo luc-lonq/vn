@@ -4,10 +4,20 @@ import { api } from '../../lib/api.js';
 import { daysUntil, plural } from '../../lib/format.js';
 import CardForm from './CardForm.jsx';
 
-function cardStatus(card) {
-  if (card.state === 'new') return 'nouvelle';
-  if (card.state !== 'review') return 'en cours';
-  return card.due <= Date.now() ? 'à revoir' : daysUntil(card.due);
+/** Status of one direction of a card. */
+function directionStatus(progress) {
+  if (!progress || progress.state === 'new') return 'nouvelle';
+  if (progress.state !== 'review') return 'en cours';
+  return progress.due <= Date.now() ? 'à revoir' : daysUntil(progress.due);
+}
+
+function CardProgress({ progress }) {
+  return (
+    <span className="text-xs text-muted whitespace-nowrap text-right leading-relaxed">
+      <span className="block">vi→fr · {directionStatus(progress['vi-fr'])}</span>
+      <span className="block">fr→vi · {directionStatus(progress['fr-vi'])}</span>
+    </span>
+  );
 }
 
 export default function CardsTab({ onChange }) {
@@ -77,13 +87,11 @@ export default function CardsTab({ onChange }) {
               <button
                 key={card.id}
                 onClick={() => setEditingId(card.id)}
-                className="w-full text-left grid grid-cols-[1fr_1fr_6rem] gap-4 items-baseline py-3 px-2 border-b border-line hover:bg-soft"
+                className="w-full text-left grid grid-cols-[1fr_1fr_9rem] gap-4 items-center py-2 px-2 border-b border-line hover:bg-soft"
               >
                 <span className="truncate">{card.front}</span>
                 <span className="truncate text-muted">{card.back}</span>
-                <span className="text-xs text-muted whitespace-nowrap text-right">
-                  {cardStatus(card)}
-                </span>
+                <CardProgress progress={card.progress} />
               </button>
             )
           )}

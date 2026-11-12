@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { cardText } from '../services/history.js';
+import { DIRECTIONS } from '../services/review.js';
 import { badRequest, likePattern, notFound, text } from '../utils/input.js';
 
 // Bulk import: one card per line, "vietnamese ; translation [; example]".
@@ -19,14 +20,18 @@ function readFields(body, fallback = {}) {
 export function cardsRouter(db, history) {
   const stmt = {
     list: db.prepare('SELECT * FROM cards ORDER BY created_at DESC, id DESC'),
+    states: db.prepare('SELECT card_id, direction, state, due, interval FROM card_states'),
+    insertState: db.prepare(
+      'INSERT INTO card_states (card_id, direction, due) VALUES (@cardId, @direction, @now)'
+    ),
     search: db.prepare(`
       SELECT * FROM cards
       WHERE front LIKE ? ESCAPE '\\' OR back LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\'
       ORDER BY created_at DESC, id DESC`),
     get: db.prepare('SELECT * FROM cards WHERE id = ?'),
     insert: db.prepare(`
-      INSERT INTO cards (front, back, example, tags, due, created_at, updated_at)
-      VALUES (@front, @back, @example, @tags, @now, @now, @now)`),
+      INSERT INTO cards (front, back, example, tags, created_at, updated_at)
+      VALUES (@front, @back, @example, @tags, @now, @now)`),
     update: db.prepare(`
       UPDATE cards SET front = @front, back = @back, example = @example, tags = @tags, updated_at = @now
       WHERE id = @id`),
@@ -39,21 +44,38 @@ export function cardsRouter(db, history) {
     return card;
   };
 
+  /** Inserts a card and one review item per direction; returns the card id. */
+  const insertCard = (card, now) => {
+    const { lastInsertRowid: cardId } = stmt.insert.run({ ...card, now });
+    for (const direction of DIRECTIONS) stmt.insertState.run({ cardId, direction, now });
+    return cardId;
+  };
+  const insertOne = db.transaction(insertCard);
   const insertMany = db.transaction((cards, now) => {
-    for (const card of cards) stmt.insert.run({ ...card, now });
+    for (const card of cards) insertCard(card, now);
   });
+
+  /** Adds each card's per-direction progress: { 'vi-fr': {state, due, interval}, ... }. */
+  const withProgress = (cards) => {
+    const byCard = new Map();
+    for (const { card_id, direction, ...progress } of stmt.states.all()) {
+      if (!byCard.has(card_id)) byCard.set(card_id, {});
+      byCard.get(card_id)[direction] = progress;
+    }
+    return cards.map((card) => ({ ...card, progress: byCard.get(card.id) ?? {} }));
+  };
 
   const router = Router();
 
   router.get('/', (req, res) => {
     const q = text(req.query.q, 200).trim();
     const p = likePattern(q);
-    res.json(q ? stmt.search.all(p, p, p) : stmt.list.all());
+    res.json(withProgress(q ? stmt.search.all(p, p, p) : stmt.list.all()));
   });
 
   router.post('/', (req, res) => {
     const card = readFields(req.body);
-    const { lastInsertRowid: id } = stmt.insert.run({ ...card, now: Date.now() });
+    const id = insertOne(card, Date.now());
     history.record({
       type: 'card',
       id,

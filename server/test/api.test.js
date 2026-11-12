@@ -81,10 +81,11 @@ describe('API', () => {
   it('serves due cards and records answers', async () => {
     const { body: first } = await ctx.request('GET', '/review/next');
     assert.equal(first.card.front, 'cảm ơn');
-    assert.equal(first.previews.length, 4);
+    assert.deepEqual(first.previews, ['1 min', '10 min']);
+    assert.equal(first.card.direction, 'vi-fr');
 
     assert.equal(
-      (await ctx.request('POST', `/review/${first.card.id}`, { rating: 7 })).status,
+      (await ctx.request('POST', `/review/${first.card.id}`, { rating: 2 })).status,
       400
     );
     assert.equal(

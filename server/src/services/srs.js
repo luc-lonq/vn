@@ -1,21 +1,22 @@
 import { addDays, daysBetween, studyDayStart } from '../utils/time.js';
 
 /**
- * Anki-style scheduler (the classic SM-2 variant used by Anki's v3 scheduler).
+ * Anki-style scheduler (the classic SM-2 variant of Anki's v3 scheduler),
+ * reduced to two answers: "I don't know" (Again) and "I know" (Good).
  *
- * A card goes through these states:
- *
- *   new ──► learning ──(Good on last step / Easy)──► review
- *              ▲  │                                   │
- *              └──┘ Again: back to step 1             │ Again (lapse)
- *                                                     ▼
- *                         review ◄──(Good / Easy)── relearning
+ *   new ──► learning ──(I know, last step)──► review
+ *              ▲  │                              │
+ *              └──┘ I don't know: step 1         │ I don't know (lapse)
+ *                                                ▼
+ *                    review ◄──(I know)──── relearning
  *
  * Learning and relearning use short steps in minutes and come back within the
  * same session. Review intervals are whole days and grow with each success.
  */
 
-export const Rating = Object.freeze({ AGAIN: 1, HARD: 2, GOOD: 3, EASY: 4 });
+// Values match the review log, which also holds ratings from the former
+// four-button version (2 = hard, 4 = easy).
+export const Rating = Object.freeze({ AGAIN: 1, GOOD: 3 });
 
 export const State = Object.freeze({
   NEW: 'new',
@@ -28,12 +29,10 @@ export const State = Object.freeze({
 export const DEFAULT_SETTINGS = Object.freeze({
   learningSteps: [1, 10], // minutes
   relearningSteps: [10], // minutes
-  graduatingInterval: 1, // days, after Good on the last learning step
-  easyInterval: 4, // days, after Easy on a learning card
+  graduatingInterval: 1, // days, after "I know" on the last learning step
   startingEase: 2.5,
   minEase: 1.3,
-  easyBonus: 1.3,
-  hardMultiplier: 1.2,
+  lapseEasePenalty: 0.2,
   lapseMultiplier: 0, // "new interval": share of the interval kept after a lapse
   minimumInterval: 1,
   maximumInterval: 36500,
@@ -42,45 +41,18 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 const MINUTE = 60 * 1000;
 
-/**
- * Moves a (re)learning card through its steps.
- * Returns `{ step, minutes }` to stay in learning, or `{ graduate: rating }`.
- */
-function answerStep(steps, step, rating) {
-  if (steps.length === 0) return { graduate: rating === Rating.EASY ? 'easy' : 'good' };
-  const current = Math.min(step, steps.length - 1);
-
-  switch (rating) {
-    case Rating.AGAIN:
-      return { step: 0, minutes: steps[0] };
-    case Rating.HARD: {
-      // Anki: on the first step, Hard waits halfway between steps 1 and 2
-      // (or 1.5× the step when there is only one); later, it repeats the step.
-      if (current > 0) return { step: current, minutes: steps[current] };
-      const minutes = steps.length > 1 ? (steps[0] + steps[1]) / 2 : steps[0] * 1.5;
-      return { step: 0, minutes };
-    }
-    case Rating.GOOD:
-      return current + 1 < steps.length
-        ? { step: current + 1, minutes: steps[current + 1] }
-        : { graduate: 'good' };
-    default:
-      return { graduate: 'easy' };
-  }
-}
-
 export function createScheduler(overrides = {}) {
   const s = { ...DEFAULT_SETTINGS, ...overrides };
 
   const clampInterval = (days) =>
     Math.min(s.maximumInterval, Math.max(s.minimumInterval, Math.round(days)));
 
-  const inLearning = (card, state, { step, minutes }, now) => ({
+  const toStep = (card, state, steps, step, now) => ({
     ...card,
     state,
     step,
-    due: now + Math.round(minutes * MINUTE),
-    delay: { minutes },
+    due: now + Math.round(steps[step] * MINUTE),
+    delay: { minutes: steps[step] },
   });
 
   const toReview = (card, interval, now) => {
@@ -95,19 +67,15 @@ export function createScheduler(overrides = {}) {
     };
   };
 
-  function answerLearning(card, rating, now) {
-    const result = answerStep(s.learningSteps, card.step, rating);
-    if (!result.graduate) return inLearning(card, State.LEARNING, result, now);
-    const interval = result.graduate === 'easy' ? s.easyInterval : s.graduatingInterval;
-    return toReview(card, interval, now);
-  }
-
-  function answerRelearning(card, rating, now) {
-    const result = answerStep(s.relearningSteps, card.step, rating);
-    if (!result.graduate) return inLearning(card, State.RELEARNING, result, now);
-    // card.interval was already reduced when the card lapsed.
-    const interval = result.graduate === 'easy' ? card.interval + 1 : card.interval;
-    return toReview(card, interval, now);
+  /**
+   * Shared by learning and relearning: "I don't know" goes back to the first
+   * step, "I know" moves to the next one or graduates via `graduate()`.
+   */
+  function answerSteps(card, rating, state, steps, graduate, now) {
+    if (steps.length === 0) return graduate();
+    if (rating === Rating.AGAIN) return toStep(card, state, steps, 0, now);
+    const next = Math.min(card.step, steps.length - 1) + 1;
+    return next < steps.length ? toStep(card, state, steps, next, now) : graduate();
   }
 
   function answerReview(card, rating, now) {
@@ -115,28 +83,18 @@ export function createScheduler(overrides = {}) {
       const lapsed = {
         ...card,
         lapses: card.lapses + 1,
-        ease: Math.max(s.minEase, card.ease - 0.2),
+        ease: Math.max(s.minEase, card.ease - s.lapseEasePenalty),
         interval: clampInterval(card.interval * s.lapseMultiplier),
       };
       if (s.relearningSteps.length === 0) return toReview(lapsed, lapsed.interval, now);
-      return inLearning(lapsed, State.RELEARNING, { step: 0, minutes: s.relearningSteps[0] }, now);
+      return toStep(lapsed, State.RELEARNING, s.relearningSteps, 0, now);
     }
 
-    // Reviewing late is rewarded: Good counts half the delay, Easy all of it.
+    // Reviewing late is rewarded with half the delay, like Anki's Good.
     const today = studyDayStart(now, s.dayStartHour);
     const daysLate = Math.max(0, daysBetween(studyDayStart(card.due, s.dayStartHour), today));
-    const ivl = card.interval;
-
-    // Each button gives at least one more day than the one before it.
-    const hard = clampInterval(Math.max(ivl * s.hardMultiplier, ivl + 1));
-    const good = clampInterval(Math.max((ivl + daysLate / 2) * card.ease, hard + 1));
-    const easy = clampInterval(Math.max((ivl + daysLate) * card.ease * s.easyBonus, good + 1));
-
-    if (rating === Rating.HARD) {
-      return toReview({ ...card, ease: Math.max(s.minEase, card.ease - 0.15) }, hard, now);
-    }
-    if (rating === Rating.GOOD) return toReview(card, good, now);
-    return toReview({ ...card, ease: card.ease + 0.15 }, easy, now);
+    const interval = Math.max((card.interval + daysLate / 2) * card.ease, card.interval + 1);
+    return toReview(card, interval, now);
   }
 
   /**
@@ -149,25 +107,38 @@ export function createScheduler(overrides = {}) {
       case State.REVIEW:
         return answerReview(base, rating, now);
       case State.RELEARNING:
-        return answerRelearning(base, rating, now);
-      default: // new cards start on the first learning step
-        return answerLearning(
-          { ...base, step: card.state === State.NEW ? 0 : card.step },
+        // card.interval was already reduced when the card lapsed.
+        return answerSteps(
+          base,
           rating,
+          State.RELEARNING,
+          s.relearningSteps,
+          () => toReview(base, base.interval, now),
           now
         );
+      default: {
+        const learning = card.state === State.NEW ? { ...base, step: 0 } : base;
+        return answerSteps(
+          learning,
+          rating,
+          State.LEARNING,
+          s.learningSteps,
+          () => toReview(learning, s.graduatingInterval, now),
+          now
+        );
+      }
     }
   }
 
-  /** Wait shown on each answer button, in rating order. */
+  /** Wait shown on each answer button: [I don't know, I know]. */
   function previews(card, now = Date.now()) {
-    return Object.values(Rating).map((r) => formatDelay(schedule(card, r, now).delay));
+    return [Rating.AGAIN, Rating.GOOD].map((r) => formatDelay(schedule(card, r, now).delay));
   }
 
   return { settings: s, schedule, previews };
 }
 
-/** "1 min", "6 min", "1 h", "4 j", "3 mois", "1,5 an" (French UI). */
+/** "1 min", "10 min", "1 h", "4 j", "3 mois", "1,5 an" (French UI). */
 export function formatDelay({ minutes, days }) {
   if (minutes !== undefined) {
     if (minutes < 60) return `${Math.round(minutes)} min`;
