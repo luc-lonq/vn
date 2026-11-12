@@ -16,12 +16,12 @@ export function relativeTime(t, now = Date.now()) {
   return new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
-/** Time until a future timestamp: "dans 9 min", "dans 3 h", "dans 4 j". */
-export function timeUntil(t, now = Date.now()) {
-  const ms = t - now;
-  if (ms < HOUR) return `dans ${Math.max(1, Math.ceil(ms / MINUTE))} min`;
-  if (ms < DAY) return `dans ${Math.round(ms / HOUR)} h`;
-  return `dans ${Math.round(ms / DAY)} j`;
+/** Calendar days until a future timestamp: "demain", "dans 4 j". */
+export function daysUntil(t, now = Date.now()) {
+  const days = Math.round((startOfDay(t) - startOfDay(now)) / DAY);
+  if (days <= 0) return "aujourd'hui";
+  if (days === 1) return 'demain';
+  return `dans ${days} j`;
 }
 
 /** Local midnight of the day containing `t`. */

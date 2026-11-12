@@ -24,6 +24,7 @@ cat > .env <<EOF
 APP_PASSWORD=$(openssl rand -base64 18)
 SESSION_SECRET=$(openssl rand -hex 32)
 COOKIE_SECURE=true
+TZ=Europe/Paris
 NEW_CARDS_PER_DAY=20
 APP_PORT=3010
 EOF
@@ -31,7 +32,7 @@ chmod 600 .env
 cat .env   # APP_PASSWORD is your login password; replace it with your own if you prefer
 ```
 
-If port 3010 is already used, change `APP_PORT` here and in `proxy_pass` below.
+Set `TZ` to your own time zone: the study day rolls over at 4 am local time. If port 3010 is already used, change `APP_PORT` here and in `proxy_pass` below. See `.env.example` for the other settings.
 
 ### nginx
 

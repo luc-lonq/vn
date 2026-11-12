@@ -1,3 +1,7 @@
+/**
+ * Base schema (version 0). Later changes go in migrations.js so that existing
+ * databases are upgraded the same way as new ones.
+ */
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS notes (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14,7 +18,7 @@ CREATE TABLE IF NOT EXISTS cards (
   example    TEXT    NOT NULL DEFAULT '',
   tags       TEXT    NOT NULL DEFAULT '',
   due        INTEGER NOT NULL,              -- epoch ms
-  interval   REAL    NOT NULL DEFAULT 0,    -- days
+  interval   REAL    NOT NULL DEFAULT 0,    -- days (review cards)
   ease       REAL    NOT NULL DEFAULT 2.5,
   reps       INTEGER NOT NULL DEFAULT 0,
   lapses     INTEGER NOT NULL DEFAULT 0,

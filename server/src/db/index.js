@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { migrate } from './migrations.js';
 import { SCHEMA } from './schema.js';
 
 /** Opens (and creates if needed) the SQLite database. Pass ':memory:' for tests. */
@@ -11,5 +12,6 @@ export function openDb(dbPath) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }

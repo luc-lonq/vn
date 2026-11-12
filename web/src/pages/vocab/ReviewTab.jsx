@@ -65,18 +65,11 @@ export default function ReviewTab({ onStats }) {
 
   const question = reverse ? card.back : card.front;
   const answer = reverse ? card.front : card.back;
-  const isNew = card.reps === 0 && card.lapses === 0 && card.interval === 0;
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex justify-between items-center text-xs text-muted mb-3">
-        <span>
-          {isNew
-            ? 'nouvelle'
-            : card.lapses
-              ? `oubliée ${card.lapses}×`
-              : `intervalle ${card.interval} j`}
-        </span>
+        <span>{cardBadge(card)}</span>
         <button className="hover:text-fg" onClick={() => setReverse((r) => !r)}>
           sens : {reverse ? 'fr → vi' : 'vi → fr'}
         </button>
@@ -123,6 +116,21 @@ export default function ReviewTab({ onStats }) {
   );
 }
 
+/** Short description of where the card is in the learning process. */
+function cardBadge(card) {
+  const lapses = card.lapses ? ` · oubliée ${card.lapses}×` : '';
+  switch (card.state) {
+    case 'new':
+      return 'nouvelle';
+    case 'learning':
+      return 'en apprentissage';
+    case 'relearning':
+      return `à réapprendre${lapses}`;
+    default:
+      return `révision · intervalle ${card.interval} j${lapses}`;
+  }
+}
+
 function ListenButton({ text }) {
   return (
     <button className="text-xs text-muted hover:text-fg" onClick={() => speak(text)}>
@@ -159,6 +167,11 @@ function EmptyState({ session, onRefresh }) {
   return (
     <div className="border border-line py-20 text-center space-y-3">
       <p className="text-lg">Terminé pour le moment. Giỏi lắm !</p>
+      {stats.newTotal > 0 && stats.newToday === 0 && (
+        <p className="text-sm text-muted">
+          Limite de nouvelles cartes atteinte pour aujourd'hui ({stats.newTotal} en attente).
+        </p>
+      )}
       {nextLabel && <p className="text-sm text-muted">Prochaine révision {nextLabel}.</p>}
       {nextDue && nextDue - Date.now() < 15 * MINUTE && (
         <button className="btn-secondary mt-4" onClick={onRefresh}>

@@ -8,8 +8,13 @@ The UI is in French; the code and docs are in English.
 
 **Vocabulary**
 
-- Review with keyboard shortcuts: `space` shows the answer, `1`–`4` rate it (again / hard / good / easy), `v` reads the word aloud (browser `vi-VN` voice, if installed).
-- Simplified SM-2 scheduler; the next interval is shown on each button. 20 new cards per day by default.
+- Spaced repetition following Anki's scheduler and default settings:
+  - **New cards** go through short learning steps (1 min, then 10 min) and come back within the same session until you get them right. _Again_ restarts the steps; _Good_ on the last step graduates the card to a 1-day interval; _Easy_ graduates it straight to 4 days.
+  - **Review cards** are due on a given day. _Good_ multiplies the interval by the card's ease (2.5 at first), _Hard_ by 1.2, _Easy_ by ease × 1.3; Hard and Easy also lower or raise the ease.
+  - **Forgotten cards** (_Again_ on a review) go to a 10-minute relearning step, then restart at a 1-day interval with a lower ease.
+  - When nothing else is due, cards still in learning are shown up to 20 minutes early, so a session ends once everything is learned. The study day rolls over at 4 am.
+  - Steps, daily new card limit and day start are configurable in `.env`.
+- Keyboard shortcuts: `space` shows the answer, `1`–`4` rate it (again / hard / good / easy), `v` reads the word aloud (browser `vi-VN` voice, if installed). The wait before the card comes back is shown on each button.
 - Vietnamese → French or French → Vietnamese.
 - Bulk import: one card per line, `vietnamese ; french ; example` (`;`, `|` or tab separated, so pasting from a spreadsheet works).
 
@@ -54,10 +59,10 @@ server/
     server.js          entry point (config, database, HTTP server)
     app.js             Express app factory, route wiring
     config.js          environment variables
-    db/                schema and connection
+    db/                schema, migrations and connection
     middleware/        auth (sessions, login rate limit), error handler
     routes/            notes, cards, review, history
-    services/          SM-2 scheduler, review queue and stats, history/diffs
+    services/          Anki-style scheduler, review queue and stats, history/diffs
     utils/
   test/                node:test suites (unit + API against an in-memory database)
 web/
@@ -102,5 +107,5 @@ All routes are under `/api` and require the session cookie, except `health` and 
 | `PUT` `DELETE`      | `/cards/:id`        |                                             |
 | `GET`               | `/review/next`      | Next card, interval previews and stats      |
 | `POST`              | `/review/:id`       | `{ rating: 1-4 }`                           |
-| `GET`               | `/stats`            | Due / new / reviewed today / streak / total |
+| `GET`               | `/stats`            | New / learning / due, reviewed today, streak |
 | `GET`               | `/history`          | Paginated entries with diffs (`?before=`)   |

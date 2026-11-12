@@ -10,6 +10,7 @@ import { notesRouter } from './routes/notes.js';
 import { reviewRouter, statsRouter } from './routes/review.js';
 import { createHistory } from './services/history.js';
 import { createReviewService } from './services/review.js';
+import { createScheduler } from './services/srs.js';
 
 /** Serves the built frontend, falling back to index.html for client-side routes. */
 function serveFrontend(app, dir) {
@@ -31,7 +32,8 @@ export function createApp({ db, config }) {
   app.use(cookieParser());
 
   const history = createHistory(db);
-  const review = createReviewService(db, config);
+  const scheduler = createScheduler(config.scheduler);
+  const review = createReviewService(db, { newCardsPerDay: config.newCardsPerDay, scheduler });
   const auth = createAuth(config);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));

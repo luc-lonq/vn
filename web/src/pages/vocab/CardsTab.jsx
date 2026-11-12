@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useSearch } from '../../hooks/useSearch.js';
 import { api } from '../../lib/api.js';
-import { plural, timeUntil } from '../../lib/format.js';
+import { daysUntil, plural } from '../../lib/format.js';
 import CardForm from './CardForm.jsx';
 
 function cardStatus(card) {
-  if (card.reps === 0 && card.lapses === 0 && card.interval === 0) return 'nouvelle';
-  if (card.due <= Date.now()) return 'à revoir';
-  return timeUntil(card.due);
+  if (card.state === 'new') return 'nouvelle';
+  if (card.state !== 'review') return 'en cours';
+  return card.due <= Date.now() ? 'à revoir' : daysUntil(card.due);
 }
 
 export default function CardsTab({ onChange }) {
